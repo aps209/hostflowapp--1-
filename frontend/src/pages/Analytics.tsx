@@ -42,6 +42,12 @@ export default function Analytics() {
     enabled: !!restaurantId,
   });
 
+  const { data: tables = [] } = useQuery({
+    queryKey: ['tables', restaurantId],
+    queryFn: () => base44.entities.Table.filter({ restaurant_id: restaurantId }),
+    enabled: !!restaurantId,
+  });
+
   const { data: orders = [] } = useQuery({
     queryKey: ['orders', restaurantId],
     queryFn: async () => {
@@ -73,16 +79,18 @@ export default function Analytics() {
   });
 
   const config = configs[0] || {};
-  const totalCapacity = config.capacidad_total || 0;
+  const totalCapacity = tables
+    .filter(table => table.activa !== false)
+    .reduce((sum, table) => sum + (Number(table.capacidad) || 0), 0) || config.capacidad_total || 0;
 
   // Filtrar datos según el período seleccionado y filtros
-  const filteredReservations = useMemo(() => {
+  const selectedDateRange = useMemo(() => {
     const now = new Date();
     let startDate;
     let endDate = now;
 
     if (selectedPeriod === 'custom') {
-      if (!customStartDate || !customEndDate) return [];
+      if (!customStartDate || !customEndDate) return { startDate: null, endDate: null };
       startDate = parseISO(customStartDate);
       endDate = parseISO(customEndDate);
     } else {
@@ -109,6 +117,13 @@ export default function Analytics() {
       }
     }
 
+    return { startDate, endDate };
+  }, [selectedPeriod, customStartDate, customEndDate]);
+
+  const filteredReservations = useMemo(() => {
+    const { startDate, endDate } = selectedDateRange;
+    if (!startDate || !endDate) return [];
+
     return reservations.filter(r => {
       if (!r.fecha) return false;
       const resDate = parseISO(r.fecha);
@@ -119,7 +134,17 @@ export default function Analytics() {
       
       return inDateRange && waiterMatch && sourceMatch;
     });
-  }, [reservations, selectedPeriod, customStartDate, customEndDate, selectedWaiter, selectedSource]);
+  }, [reservations, selectedDateRange, selectedWaiter, selectedSource]);
+
+  const filteredOrders = useMemo(() => {
+    const { startDate, endDate } = selectedDateRange;
+    if (!startDate || !endDate) return [];
+
+    return orders.filter(order => {
+      if (!order.fecha_hora) return false;
+      return isWithinInterval(new Date(order.fecha_hora), { start: startDate, end: endDate });
+    });
+  }, [orders, selectedDateRange]);
 
   // Métricas principales
   const totalReservations = filteredReservations.length;
@@ -175,13 +200,12 @@ export default function Analytics() {
     return Object.entries(sources).map(([key, value]) => ({
       name: sourceLabels[key] || key,
       value,
-      percentage: ((value / filteredReservations.length) * 100).toFixed(1)
+      percentage: filteredReservations.length > 0 ? ((Number(value) / filteredReservations.length) * 100).toFixed(1) : '0.0'
     }));
   }, [filteredReservations]);
 
   // Rendimiento de camareros
   const waiterPerformance = useMemo(() => {
-    console.log('Recalculando waiterPerformance con', filteredReservations.length, 'reservas filtradas');
     const waiterStats = {};
 
     waiters.forEach(waiter => {
@@ -202,19 +226,16 @@ export default function Analytics() {
       }
     });
 
-    const result = Object.values(waiterStats)
+    return Object.values(waiterStats)
       .filter(w => w.reservations > 0)
       .sort((a, b) => b.reservations - a.reservations);
-    
-    console.log('Resultado waiterPerformance:', result);
-    return result;
   }, [filteredReservations, waiters]);
 
   // Platos más vendidos
   const topProducts = useMemo(() => {
     const productCounts = {};
 
-    orders.forEach(order => {
+    filteredOrders.forEach(order => {
       if (order.items && Array.isArray(order.items)) {
         order.items.forEach(item => {
           if (!productCounts[item.product_id]) {
@@ -233,7 +254,7 @@ export default function Analytics() {
     return Object.values(productCounts)
       .sort((a, b) => b.cantidad - a.cantidad)
       .slice(0, 10);
-  }, [orders]);
+  }, [filteredOrders]);
 
   // Estados de reservas
   const reservationStates = useMemo(() => {
@@ -376,7 +397,14 @@ export default function Analytics() {
         filters
       });
 
-      const blob = new Blob([response.data], { type: 'application/pdf' });
+      if (typeof response.data !== 'string' && !(response.data instanceof Blob)) {
+        toast.info(response.data?.message || 'Exportacion PDF no disponible en modo local');
+        return;
+      }
+
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

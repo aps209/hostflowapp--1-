@@ -50,6 +50,10 @@ Variables principales:
 - `CORS_ORIGINS`
 - `SEED_ADMIN_EMAIL`
 - `SEED_ADMIN_PASSWORD`
+- `PLATFORM_ADMIN_EMAIL` email del unico usuario que puede ver el panel Admin de plataforma.
+- `GOOGLE_PLACES_API_KEY` para sincronizar reseñas con Google Places API (New) usando el `google_place_id` del restaurante.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` para enviar recordatorios SMS reales.
+- `PUBLIC_APP_URL` URL usada en enlaces de confirmacion/cancelacion dentro de recordatorios.
 
 ## Endpoints principales
 

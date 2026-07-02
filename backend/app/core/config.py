@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     seed_initial_data: bool = True
     seed_admin_email: str = "admin@hostflow.local"
     seed_admin_password: str = "Hostflow123!"
+    platform_admin_email: str = "admin@hostflow.local"
+    google_places_api_key: str | None = None
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    twilio_phone_number: str | None = None
+    public_app_url: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

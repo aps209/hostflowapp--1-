@@ -9,6 +9,8 @@ import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-d
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import { PAGE_MODULE_REQUIREMENTS } from '@/lib/modules';
+import { isPlatformAdmin, isRestaurantAdmin } from '@/lib/authz';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -26,8 +28,27 @@ const publicPages = new Set([
   'confirmar-reserva',
 ]);
 
+const adminPages = new Set(['Admin', 'ModulosRestaurante']);
+const mainModules = new Set(['dashboard_principal', 'crm_privado']);
+
+const userHasModule = (user, moduleName: string) => {
+  const value = user?.modulos_permitidos?.[moduleName];
+  return value === true || (value === undefined && mainModules.has(moduleName));
+};
+
+const AccessDenied = () => (
+  <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="max-w-md rounded-lg bg-white dark:bg-slate-900 p-6 text-center shadow-xl">
+      <h1 className="text-xl font-bold text-slate-900 dark:text-white">Acceso no disponible</h1>
+      <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+        Tu usuario no tiene permiso para este modulo.
+      </p>
+    </div>
+  </div>
+);
+
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, isAuthenticated } = useAuth();
+  const { user, isLoadingAuth, isLoadingPublicSettings, authError, isAuthenticated } = useAuth();
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -46,6 +67,27 @@ const AuthenticatedApp = () => {
       return <Navigate to="/Login" replace />;
     }
 
+    if (isAuthenticated && adminPages.has(path) && !isPlatformAdmin(user)) {
+      return <Navigate to="/Dashboard" replace />;
+    }
+
+    const requiredModule = PAGE_MODULE_REQUIREMENTS[path];
+    if (
+      isAuthenticated &&
+      !isRestaurantAdmin(user) &&
+      requiredModule &&
+      !userHasModule(user, requiredModule)
+    ) {
+      if (path === 'Dashboard') {
+        return (
+          <LayoutWrapper currentPageName={path}>
+            <AccessDenied />
+          </LayoutWrapper>
+        );
+      }
+      return <Navigate to="/Dashboard" replace />;
+    }
+
     return (
       <LayoutWrapper currentPageName={path}>
         <Page />
@@ -57,11 +99,13 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/" element={
         isAuthenticated
-          ? (
+          ? adminPages.has(mainPageKey) && !isPlatformAdmin(user)
+            ? <Navigate to="/Dashboard" replace />
+            : (
             <LayoutWrapper currentPageName={mainPageKey}>
               <MainPage />
             </LayoutWrapper>
-          )
+            )
           : <Navigate to="/Login" replace />
       } />
       {Object.entries(Pages).map(([path, Page]) => (

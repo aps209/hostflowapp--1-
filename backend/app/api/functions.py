@@ -1,9 +1,16 @@
-from datetime import date
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+from base64 import b64encode
+from datetime import date, datetime, timedelta, timezone
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.database import get_db
 from app.models.entity import EntityRecord
 from app.services.entities import create_entity_record, serialize_record, update_entity_record
@@ -110,6 +117,241 @@ def create_reservation(db: Session, payload: dict) -> dict:
     return {"success": True, "reservation": reservation, "reservation_id": reservation["reservation_id"]}
 
 
+def fetch_google_place_details(place_id: str) -> dict:
+    if not settings.google_places_api_key:
+        return {
+            "success": False,
+            "error": "Falta configurar GOOGLE_PLACES_API_KEY en el backend",
+        }
+
+    url = f"https://places.googleapis.com/v1/places/{quote(place_id, safe='')}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": settings.google_places_api_key,
+            "X-Goog-FieldMask": "id,displayName,rating,userRatingCount,reviews",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return {"success": True, "data": json.loads(response.read().decode("utf-8"))}
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        return {"success": False, "error": f"Google Places devolvio {error.code}: {body}"}
+    except urllib.error.URLError as error:
+        return {"success": False, "error": f"No se pudo conectar con Google Places: {error.reason}"}
+
+
+def sync_google_reviews(db: Session, payload: dict) -> dict:
+    restaurant_id = payload.get("restaurantId") or payload.get("restaurant_id")
+    if not restaurant_id:
+        return {"success": False, "error": "Falta restaurantId"}
+
+    restaurant = find_one(db, "Restaurant", id=restaurant_id)
+    if not restaurant:
+        return {"success": False, "error": "Restaurante no encontrado"}
+
+    place_id = restaurant.get("google_place_id")
+    if not place_id:
+        return {"success": False, "error": "El restaurante no tiene google_place_id"}
+
+    place_response = fetch_google_place_details(place_id)
+    if not place_response.get("success"):
+        return place_response
+
+    place = place_response["data"]
+    reviews = place.get("reviews") or []
+    existing_reviews = all_records(db, "Review")
+    imported = 0
+    updated = 0
+
+    for review in reviews:
+        author = review.get("authorAttribution") or {}
+        text = review.get("text") or review.get("originalText") or {}
+        publish_time = review.get("publishTime")
+        google_review_name = review.get("name") or f"{place_id}:{author.get('uri', '')}:{publish_time or ''}"
+
+        review_data = {
+            "restaurant_id": restaurant_id,
+            "cliente_nombre": author.get("displayName") or "Cliente de Google",
+            "calificacion": review.get("rating") or 0,
+            "comentario": text.get("text") or "",
+            "fecha_visita": publish_time[:10] if publish_time else date.today().isoformat(),
+            "estado": "publicada",
+            "source": "google",
+            "google_place_id": place_id,
+            "google_review_name": google_review_name,
+            "google_author_uri": author.get("uri"),
+            "google_author_photo_uri": author.get("photoUri"),
+            "google_publish_time": publish_time,
+        }
+
+        existing = next(
+            (
+                item for item in existing_reviews
+                if item.get("restaurant_id") == restaurant_id and item.get("google_review_name") == google_review_name
+            ),
+            None,
+        )
+
+        if existing:
+            update_entity_record(db, "Review", existing["id"], review_data)
+            updated += 1
+        else:
+            created = create_entity_record(db, "Review", review_data)
+            existing_reviews.append(created)
+            imported += 1
+
+    update_entity_record(db, "Restaurant", restaurant_id, {
+        "google_rating": place.get("rating"),
+        "google_user_rating_count": place.get("userRatingCount"),
+        "google_reviews_synced_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    place_name = (place.get("displayName") or {}).get("text") or restaurant.get("nombre")
+    return {
+        "success": True,
+        "message": f"Resenas de Google sincronizadas para {place_name}",
+        "reviewsImported": imported,
+        "reviewsUpdated": updated,
+        "googleRating": place.get("rating"),
+        "googleUserRatingCount": place.get("userRatingCount"),
+    }
+
+
+def format_spanish_date(date_value: str) -> str:
+    weekdays = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+    months = [
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+    ]
+    parsed = datetime.fromisoformat(date_value)
+    return f"{weekdays[parsed.weekday()]}, {parsed.day} de {months[parsed.month - 1]}"
+
+
+def build_reminder_message(config: dict, restaurant: dict, reservation: dict) -> str:
+    mesa_info = ", ".join(reservation.get("mesas_numeros") or []) or reservation.get("mesa_numero") or "Por asignar"
+    cancel_url = f"{settings.public_app_url.rstrip('/')}/confirmar-reserva?token={reservation.get('confirmation_token')}&action=cancelar"
+    template = config.get("sms_message_template") or (
+        "Hola {nombre}, te recordamos tu reserva en {restaurante} el {fecha} a las {hora} "
+        "para {comensales} personas. Mesa: {mesa}. Cancelar: {link_cancelar}"
+    )
+    return (
+        template
+        .replace("{nombre}", reservation.get("cliente_nombre") or "Cliente")
+        .replace("{restaurante}", restaurant.get("nombre") or "Restaurante")
+        .replace("{fecha}", format_spanish_date(reservation.get("fecha")))
+        .replace("{hora}", reservation.get("hora") or "")
+        .replace("{mesa}", mesa_info)
+        .replace("{comensales}", str(reservation.get("comensales") or ""))
+        .replace("{link_cancelar}", cancel_url)
+    )
+
+
+def send_twilio_sms(to: str, body: str) -> dict:
+    if not settings.twilio_account_sid or not settings.twilio_auth_token or not settings.twilio_phone_number:
+        return {"sent": False, "dry_run": True, "message": "Twilio no configurado"}
+
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json"
+    encoded = urllib.parse.urlencode({
+        "Body": body,
+        "From": settings.twilio_phone_number,
+        "To": to,
+    }).encode("utf-8")
+    credentials = f"{settings.twilio_account_sid}:{settings.twilio_auth_token}".encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=encoded,
+        headers={
+            "Authorization": f"Basic {b64encode(credentials).decode('ascii')}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return {"sent": True, "dry_run": False, "provider_response": json.loads(response.read().decode("utf-8"))}
+    except urllib.error.HTTPError as error:
+        body_text = error.read().decode("utf-8", errors="replace")
+        return {"sent": False, "dry_run": False, "error": f"Twilio devolvio {error.code}: {body_text}"}
+    except urllib.error.URLError as error:
+        return {"sent": False, "dry_run": False, "error": f"No se pudo conectar con Twilio: {error.reason}"}
+
+
+def enviar_recordatorios(db: Session, payload: dict) -> dict:
+    restaurant_id = payload.get("restaurant_id") or payload.get("restaurantId")
+    if not restaurant_id:
+        return {"success": False, "error": "restaurant_id es requerido"}
+
+    configs = [item for item in all_records(db, "ReminderConfig") if item.get("restaurant_id") == restaurant_id]
+    if not configs or not configs[0].get("enabled"):
+        return {
+            "success": True,
+            "message": "Recordatorios no activados para este restaurante",
+            "enviados": 0,
+            "errores": 0,
+            "total": 0,
+            "detalles": [],
+        }
+
+    config = configs[0]
+    hours_before = int(config.get("hours_before") or 24)
+    target_time = datetime.now(timezone.utc) + timedelta(hours=hours_before)
+    target_date = payload.get("target_date") or target_time.date().isoformat()
+    restaurant = find_one(db, "Restaurant", id=restaurant_id) or {"nombre": "Restaurante"}
+
+    reservations = [
+        item for item in all_records(db, "Reservation")
+        if item.get("restaurant_id") == restaurant_id and item.get("fecha") == target_date
+    ]
+    if config.get("only_confirmed"):
+        reservations = [item for item in reservations if item.get("estado") == "confirmada"]
+    reservations = [item for item in reservations if item.get("cliente_telefono")]
+
+    enviados = 0
+    errores = 0
+    dry_run = False
+    detalles = []
+
+    for reservation in reservations:
+        message = build_reminder_message(config, restaurant, reservation)
+        result = send_twilio_sms(reservation.get("cliente_telefono"), message)
+        dry_run = dry_run or result.get("dry_run", False)
+
+        if result.get("sent") or result.get("dry_run"):
+            enviados += 1
+            detalles.append({
+                "reserva_id": reservation.get("reservation_id"),
+                "cliente": reservation.get("cliente_nombre"),
+                "telefono": reservation.get("cliente_telefono"),
+                "resultado": "Dry run - Twilio no configurado" if result.get("dry_run") else "Enviado correctamente",
+                "mensaje": message,
+            })
+        else:
+            errores += 1
+            detalles.append({
+                "reserva_id": reservation.get("reservation_id"),
+                "cliente": reservation.get("cliente_nombre"),
+                "telefono": reservation.get("cliente_telefono"),
+                "resultado": result.get("error") or "Error desconocido",
+            })
+
+    return {
+        "success": errores == 0,
+        "message": "Recordatorios procesados en modo prueba" if dry_run else "Recordatorios procesados",
+        "dry_run": dry_run,
+        "target_date": target_date,
+        "enviados": enviados,
+        "errores": errores,
+        "total": len(reservations),
+        "detalles": detalles,
+    }
+
+
 @router.post("/{function_name}")
 def invoke_function(function_name: str, payload: dict, db: Session = Depends(get_db)) -> dict:
     if function_name == "obtenerInfoRestaurante":
@@ -157,6 +399,12 @@ def invoke_function(function_name: str, payload: dict, db: Session = Depends(get
         ]
         return {"success": True, "reservations": reservations}
 
+    if function_name == "syncGoogleReviews":
+        return sync_google_reviews(db, payload)
+
+    if function_name == "enviarRecordatorios":
+        return enviar_recordatorios(db, payload)
+
     if function_name in {
         "enviarEmailConfirmacion",
         "enviarEmailCancelacion",
@@ -164,9 +412,7 @@ def invoke_function(function_name: str, payload: dict, db: Session = Depends(get
         "enviarCampanaSMS",
         "enviarCampanaWhatsApp",
         "actualizarDuracionReservas",
-        "syncGoogleReviews",
         "exportAnalyticsPDF",
-        "enviarRecordatorios",
         "notificarReservaN8n",
         "sendCancellationWebhook",
     }:

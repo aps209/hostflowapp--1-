@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Plus, Building2, RefreshCw, MapPin, Edit, Trash2, X, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { createPageUrl } from "@/utils";
+import { APP_MODULES } from "@/lib/modules";
+import { isPlatformAdmin } from "@/lib/authz";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,8 +47,7 @@ export default function Admin() {
         const currentUser = await base44.auth.me();
         setUser(currentUser);
         
-        // Si no es admin, redirigir al dashboard
-        if (currentUser.role !== 'admin') {
+        if (!isPlatformAdmin(currentUser)) {
           window.location.href = createPageUrl('Dashboard');
         }
       } catch (error) {
@@ -63,7 +64,7 @@ export default function Admin() {
   const { data: restaurants = [], isLoading: loadingRestaurants } = useQuery({
     queryKey: ['allRestaurants'],
     queryFn: () => base44.entities.Restaurant.list('-created_date'),
-    enabled: user?.role === 'admin',
+    enabled: isPlatformAdmin(user),
   });
 
   const createRestaurantMutation = useMutation({
@@ -84,7 +85,11 @@ export default function Admin() {
         slug: finalSlug,
         fecha_registro: new Date().toISOString().split('T')[0],
         activo: true,
-        plan: 'profesional'
+        plan: 'profesional',
+        modulos_activos: {
+          dashboard_principal: true,
+          crm_privado: true,
+        },
       });
     },
     onSuccess: () => {
@@ -229,7 +234,7 @@ export default function Admin() {
   }
 
   // Si no es admin, mostrar mensaje (aunque ya debería haber redirigido)
-  if (user?.role !== 'admin') {
+  if (!isPlatformAdmin(user)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-black">
         <Card className="border-0 shadow-xl shadow-slate-900/5 bg-white dark:bg-slate-900 max-w-md">
@@ -395,11 +400,14 @@ export default function Admin() {
                         {/* Módulos activos */}
                         <div className="mt-2 flex flex-wrap gap-1">
                           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Módulos:</span>
-                          {modulosActivos.productos && <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs">Productos</Badge>}
-                          {modulosActivos.stock && <Badge className="bg-green-100 text-green-800 border-green-200 text-xs">Stock</Badge>}
-                          {modulosActivos.pedidos && <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs">Pedidos</Badge>}
-                          {modulosActivos.analytics_avanzado && <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">Analytics</Badge>}
-                          {!modulosActivos.productos && !modulosActivos.stock && !modulosActivos.pedidos && !modulosActivos.analytics_avanzado && (
+                          {APP_MODULES.map((modulo) => (
+                            modulosActivos[modulo.key] && (
+                              <Badge key={modulo.key} className={`${modulo.colorClass} text-xs`}>
+                                {modulo.nombre}
+                              </Badge>
+                            )
+                          ))}
+                          {!APP_MODULES.some((modulo) => modulosActivos[modulo.key]) && (
                             <Badge variant="outline" className="text-xs">Plan básico</Badge>
                           )}
                         </div>

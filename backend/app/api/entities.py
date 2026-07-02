@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, is_platform_admin
 from app.db.database import get_db
 from app.models.entity import EntityRecord
 from app.services.entities import (
@@ -18,6 +18,28 @@ from app.services.entities import (
 
 
 router = APIRouter(prefix="/entities", tags=["entities"])
+
+
+def scope_items_for_user(entity_name: str, items: list[dict], current_user) -> list[dict]:
+    if is_platform_admin(current_user):
+        return items
+    if entity_name == "User":
+        return [item for item in items if item.get("id") == current_user.id]
+    if entity_name == "Restaurant":
+        return [item for item in items if item.get("id") == current_user.restaurant_id]
+    return items
+
+
+def ensure_platform_admin_for_entity_write(entity_name: str, current_user, item_id: str | None = None) -> None:
+    if entity_name not in {"User", "Restaurant"}:
+        return
+    if is_platform_admin(current_user):
+        return
+    if entity_name == "User" and item_id == current_user.id:
+        return
+    if entity_name == "Restaurant" and item_id == current_user.restaurant_id:
+        return
+    raise HTTPException(status_code=403, detail="No tienes permisos para esta accion")
 
 
 def parse_filters(filters: str | None) -> dict:
@@ -37,9 +59,10 @@ def list_entity(
     direction: str = "asc",
     limit: int | None = None,
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> list[dict]:
-    items = sort_items(get_entity_items(db, entity_name), sort, direction)
+    items = scope_items_for_user(entity_name, get_entity_items(db, entity_name), current_user)
+    items = sort_items(items, sort, direction)
     return items[:limit] if limit else items
 
 
@@ -51,9 +74,10 @@ def filter_entity(
     direction: str = "asc",
     limit: int | None = None,
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> list[dict]:
-    items = filter_items(get_entity_items(db, entity_name), parse_filters(filters))
+    items = scope_items_for_user(entity_name, get_entity_items(db, entity_name), current_user)
+    items = filter_items(items, parse_filters(filters))
     items = sort_items(items, sort, direction)
     return items[:limit] if limit else items
 
@@ -63,10 +87,12 @@ def get_entity(
     entity_name: str,
     item_id: str,
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> dict:
     item = get_entity_item(db, entity_name, item_id)
     if not item:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+    if item not in scope_items_for_user(entity_name, [item], current_user):
         raise HTTPException(status_code=404, detail="Registro no encontrado")
     return item
 
@@ -76,8 +102,9 @@ def create_entity(
     entity_name: str,
     payload: dict,
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> dict:
+    ensure_platform_admin_for_entity_write(entity_name, current_user)
     return create_entity_record(db, entity_name, payload)
 
 
@@ -86,8 +113,9 @@ def bulk_create_entity(
     entity_name: str,
     payload: list[dict],
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> list[dict]:
+    ensure_platform_admin_for_entity_write(entity_name, current_user)
     records = [EntityRecord(entity_name=entity_name, data=item) for item in payload]
     db.add_all(records)
     db.commit()
@@ -102,8 +130,9 @@ def update_entity(
     item_id: str,
     payload: dict,
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> dict:
+    ensure_platform_admin_for_entity_write(entity_name, current_user, item_id)
     item = update_entity_record(db, entity_name, item_id, payload)
     if not item:
         raise HTTPException(status_code=404, detail="Registro no encontrado")
@@ -115,8 +144,9 @@ def delete_entity(
     entity_name: str,
     item_id: str,
     db: Session = Depends(get_db),
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> dict:
+    ensure_platform_admin_for_entity_write(entity_name, current_user, item_id)
     record = db.get(EntityRecord, item_id)
     if not record or record.entity_name != entity_name:
         raise HTTPException(status_code=404, detail="Registro no encontrado")

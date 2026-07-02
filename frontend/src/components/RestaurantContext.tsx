@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 
-const RestaurantContext = createContext();
+const RestaurantContext = createContext(null);
+const MAIN_MODULES = ['dashboard_principal', 'crm_privado'];
 
 export function RestaurantProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -20,10 +21,8 @@ export function RestaurantProvider({ children }) {
     const loadUser = async () => {
       try {
         const currentUser = await base44.auth.me();
-        console.log("Usuario cargado:", currentUser);
         setUser(currentUser);
         setRestaurantId(currentUser.restaurant_id);
-        console.log("Restaurant ID asignado:", currentUser.restaurant_id);
       } catch (error) {
         console.error('Error loading user:', error);
         if (error.response?.status === 401 || error.message?.includes('Unauthorized')) {
@@ -44,37 +43,29 @@ export function RestaurantProvider({ children }) {
   useEffect(() => {
     const loadRestaurantData = async () => {
       if (!restaurantId) return;
-      
+
       try {
-        console.log("Cargando datos del restaurante:", restaurantId);
-        
-        // Cargar información del restaurante
         const restaurants = await base44.entities.Restaurant.filter({ id: restaurantId });
         if (restaurants.length > 0) {
           setRestaurant(restaurants[0]);
-          console.log("Restaurante cargado:", restaurants[0]);
         }
 
-        // Cargar configuración
-        const configs = await base44.entities.RestaurantConfig.filter({ 
-          restaurant_id: restaurantId 
+        const configs = await base44.entities.RestaurantConfig.filter({
+          restaurant_id: restaurantId,
         });
-        
+
         if (configs.length > 0) {
           const restaurantConfig = configs[0];
-          console.log("Configuración cargada:", restaurantConfig);
           setConfig(restaurantConfig);
-          
+
           const newColorPrimario = restaurantConfig.color_primario || '#1e3a8a';
           const newColorAccento = restaurantConfig.color_acento || '#f59e0b';
-          
+
           setColorPrimario(newColorPrimario);
           setColorAccento(newColorAccento);
-          
+
           localStorage.setItem('hostflow_color_primario', newColorPrimario);
           localStorage.setItem('hostflow_color_acento', newColorAccento);
-        } else {
-          console.warn("No se encontró configuración para el restaurante:", restaurantId);
         }
       } catch (error) {
         console.error('Error loading restaurant data:', error);
@@ -92,22 +83,22 @@ export function RestaurantProvider({ children }) {
 
   const refreshConfig = async () => {
     if (!restaurantId) return;
-    
+
     try {
-      const configs = await base44.entities.RestaurantConfig.filter({ 
-        restaurant_id: restaurantId 
+      const configs = await base44.entities.RestaurantConfig.filter({
+        restaurant_id: restaurantId,
       });
-      
+
       if (configs.length > 0) {
         const restaurantConfig = configs[0];
         setConfig(restaurantConfig);
-        
+
         const newColorPrimario = restaurantConfig.color_primario || '#1e3a8a';
         const newColorAccento = restaurantConfig.color_acento || '#f59e0b';
-        
+
         setColorPrimario(newColorPrimario);
         setColorAccento(newColorAccento);
-        
+
         localStorage.setItem('hostflow_color_primario', newColorPrimario);
         localStorage.setItem('hostflow_color_acento', newColorAccento);
       }
@@ -116,27 +107,21 @@ export function RestaurantProvider({ children }) {
     }
   };
 
-  // Función helper para verificar si un usuario tiene acceso a un módulo
   const hasModuleAccess = (moduleName) => {
-    // Los admins siempre tienen acceso a todo
     if (user?.role === 'admin') return true;
-    
-    // Si no hay restaurante cargado, no hay acceso
     if (!restaurant) return false;
-    
-    // Verificar si el módulo está activo en el restaurante
-    const restaurantHasModule = restaurant.modulos_activos?.[moduleName] === true;
+
+    const restaurantValue = restaurant.modulos_activos?.[moduleName];
+    const restaurantHasModule = restaurantValue === true || (restaurantValue === undefined && MAIN_MODULES.includes(moduleName));
     if (!restaurantHasModule) return false;
-    
-    // Verificar si el usuario tiene permiso para este módulo
-    const userHasPermission = user?.modulos_permitidos?.[moduleName] === true;
-    
-    return userHasPermission;
+
+    const userValue = user?.modulos_permitidos?.[moduleName];
+    return userValue === true || (userValue === undefined && MAIN_MODULES.includes(moduleName));
   };
 
   return (
-    <RestaurantContext.Provider value={{ 
-      user, 
+    <RestaurantContext.Provider value={{
+      user,
       restaurantId,
       restaurant,
       loading,
@@ -144,7 +129,7 @@ export function RestaurantProvider({ children }) {
       colorPrimario,
       colorAccento,
       refreshConfig,
-      hasModuleAccess
+      hasModuleAccess,
     }}>
       {children}
     </RestaurantContext.Provider>

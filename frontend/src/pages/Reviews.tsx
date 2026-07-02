@@ -1,13 +1,16 @@
 import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
 import { Card } from "@/components/ui/card";
-import { Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { MapPin, RefreshCw, Star } from "lucide-react";
 import { format, parseISO, subDays, isAfter } from "date-fns";
 import { es, enUS, fr } from "date-fns/locale";
 import { useTranslation } from "../components/TranslationProvider";
 import { useRestaurant } from "../components/RestaurantContext";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 
 const localeMap = {
   'es': es,
@@ -16,8 +19,9 @@ const localeMap = {
 };
 
 export default function Reviews() {
-  const { restaurantId, loading: loadingRestaurant } = useRestaurant();
+  const { restaurantId, restaurant, loading: loadingRestaurant } = useRestaurant();
   const [timeFilter, setTimeFilter] = useState("all");
+  const queryClient = useQueryClient();
 
   const { data: configs = [] } = useQuery({
     queryKey: ['restaurantConfig', restaurantId],
@@ -32,6 +36,7 @@ export default function Reviews() {
   const currentLang = config?.idioma || 'es';
   const { t } = useTranslation(currentLang);
   const locale = localeMap[currentLang] || es;
+  const googleRating = Number(restaurant?.google_rating || 0);
 
   const { data: reviews = [] } = useQuery({
     queryKey: ['reviews', restaurantId],
@@ -40,6 +45,24 @@ export default function Reviews() {
     staleTime: 3 * 60 * 1000,
     cacheTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+  });
+
+  const syncGoogleReviewsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await base44.functions.invoke('syncGoogleReviews', { restaurantId });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ['reviews', restaurantId] });
+        toast.success(data.message || 'Resenas de Google sincronizadas');
+      } else {
+        toast.error(data.error || 'No se pudieron sincronizar resenas');
+      }
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'No se pudieron sincronizar resenas');
+    },
   });
 
   if (loadingRestaurant || !restaurantId) {
@@ -82,9 +105,28 @@ export default function Reviews() {
 
   return (
     <div className="p-6 md:p-8 space-y-6 min-h-screen">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('reviews.title')}</h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">{t('reviews.subtitle')}</p>
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{t('reviews.title')}</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">{t('reviews.subtitle')}</p>
+          {googleRating > 0 && (
+            <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+              Google: {googleRating.toFixed(1)} / 5
+              {restaurant.google_user_rating_count ? ` (${restaurant.google_user_rating_count} opiniones)` : ''}
+            </p>
+          )}
+        </div>
+        {restaurant?.google_place_id && (
+          <Button
+            variant="outline"
+            onClick={() => syncGoogleReviewsMutation.mutate()}
+            disabled={syncGoogleReviewsMutation.isPending}
+            className="gap-2 bg-white dark:bg-slate-900"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncGoogleReviewsMutation.isPending ? 'animate-spin' : ''}`} />
+            Sync Google
+          </Button>
+        )}
       </div>
 
       {/* Filtro de Temporalidad */}
@@ -183,6 +225,12 @@ export default function Reviews() {
                     <span className="text-sm text-slate-500 dark:text-slate-400">
                       {review.fecha_visita && format(parseISO(review.fecha_visita), "d 'de' MMMM, yyyy", { locale })}
                     </span>
+                    {review.source === 'google' && (
+                      <Badge variant="outline" className="gap-1 text-xs">
+                        <MapPin className="w-3 h-3" />
+                        Google
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>

@@ -3,6 +3,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
+from app.core.config import settings
 from app.db.database import get_db
 from app.models.user import User
 
@@ -26,3 +27,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado")
 
     return user
+
+
+def is_platform_admin(user: User) -> bool:
+    return user.email.lower() == settings.platform_admin_email.lower()

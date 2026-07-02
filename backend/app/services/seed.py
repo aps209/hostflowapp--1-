@@ -10,11 +10,42 @@ from app.models.user import User
 
 
 DEFAULT_MODULES = {
-    "productos": True,
-    "stock": True,
-    "pedidos": True,
-    "analytics_avanzado": True,
+    "dashboard_principal": True,
+    "crm_privado": True,
 }
+
+
+def normalize_module_permissions(db: Session) -> None:
+    changed = False
+
+    restaurants = db.query(EntityRecord).filter(EntityRecord.entity_name == "Restaurant").all()
+    for restaurant in restaurants:
+        data = restaurant.data or {}
+        modules = data.get("modulos_activos") or {}
+        if "dashboard_principal" not in modules or "crm_privado" not in modules:
+            restaurant.data = {
+                **data,
+                "modulos_activos": {
+                    **modules,
+                    "dashboard_principal": modules.get("dashboard_principal", True),
+                    "crm_privado": modules.get("crm_privado", True),
+                },
+            }
+            changed = True
+
+    users = db.query(User).all()
+    for user in users:
+        modules = user.modulos_permitidos or {}
+        if "dashboard_principal" not in modules or "crm_privado" not in modules:
+            user.modulos_permitidos = {
+                **modules,
+                "dashboard_principal": modules.get("dashboard_principal", True),
+                "crm_privado": modules.get("crm_privado", True),
+            }
+            changed = True
+
+    if changed:
+        db.commit()
 
 
 def create_record(db: Session, entity_name: str, data: dict) -> EntityRecord:
@@ -166,6 +197,8 @@ def create_restaurant_bundle(db: Session, owner_name: str, slug: str = "demo-hos
 def seed_initial_data(db: Session) -> None:
     if not settings.seed_initial_data:
         return
+
+    normalize_module_permissions(db)
 
     user = db.query(User).filter(User.email == settings.seed_admin_email).first()
     if user:

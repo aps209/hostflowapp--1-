@@ -10,28 +10,18 @@
       "type": "object",
       "description": "M\u00f3dulos premium a los que este usuario tiene acceso",
       "properties": {
-        "productos": {
+        "dashboard_principal": {
           "type": "boolean",
-          "default": false
+          "default": true
         },
-        "stock": {
+        "crm_privado": {
           "type": "boolean",
-          "default": false
-        },
-        "pedidos": {
-          "type": "boolean",
-          "default": false
-        },
-        "analytics_avanzado": {
-          "type": "boolean",
-          "default": false
+          "default": true
         }
       },
       "default": {
-        "productos": false,
-        "stock": false,
-        "pedidos": false,
-        "analytics_avanzado": false
+        "dashboard_principal": true,
+        "crm_privado": true
       }
     }
   },
