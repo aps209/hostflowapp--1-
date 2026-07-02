@@ -1,0 +1,39 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "restaurant_id": {
+      "type": "string",
+      "description": "ID del restaurante al que pertenece este usuario"
+    },
+    "modulos_permitidos": {
+      "type": "object",
+      "description": "M\u00f3dulos premium a los que este usuario tiene acceso",
+      "properties": {
+        "productos": {
+          "type": "boolean",
+          "default": false
+        },
+        "stock": {
+          "type": "boolean",
+          "default": false
+        },
+        "pedidos": {
+          "type": "boolean",
+          "default": false
+        },
+        "analytics_avanzado": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "default": {
+        "productos": false,
+        "stock": false,
+        "pedidos": false,
+        "analytics_avanzado": false
+      }
+    }
+  },
+  "required": []
+}

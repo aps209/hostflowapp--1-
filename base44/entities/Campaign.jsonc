@@ -1,0 +1,158 @@
+{
+  "name": "Campaign",
+  "type": "object",
+  "properties": {
+    "restaurant_id": {
+      "type": "string",
+      "description": "ID del restaurante al que pertenece esta campa\u00f1a"
+    },
+    "nombre": {
+      "type": "string"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp"
+      ],
+      "default": "email"
+    },
+    "asunto": {
+      "type": "string",
+      "description": "Asunto del email (solo para tipo email)"
+    },
+    "mensaje": {
+      "type": "string"
+    },
+    "segmento": {
+      "type": "string",
+      "enum": [
+        "todos",
+        "vip",
+        "nuevos",
+        "inactivos",
+        "cumpleanos",
+        "personalizado"
+      ],
+      "default": "todos"
+    },
+    "filtros_avanzados": {
+      "type": "object",
+      "description": "Filtros personalizados para segmentaci\u00f3n avanzada",
+      "properties": {
+        "total_visitas_min": {
+          "type": "number"
+        },
+        "total_visitas_max": {
+          "type": "number"
+        },
+        "gasto_total_min": {
+          "type": "number"
+        },
+        "gasto_total_max": {
+          "type": "number"
+        },
+        "ultima_visita_dias": {
+          "type": "number",
+          "description": "D\u00edas desde la \u00faltima visita"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ocasion_especial": {
+          "type": "string"
+        },
+        "preferencias": {
+          "type": "string"
+        }
+      }
+    },
+    "fecha_envio": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "estado": {
+      "type": "string",
+      "enum": [
+        "borrador",
+        "programada",
+        "enviada",
+        "cancelada"
+      ],
+      "default": "borrador"
+    },
+    "destinatarios_totales": {
+      "type": "number",
+      "default": 0
+    },
+    "enviados": {
+      "type": "number",
+      "default": 0
+    },
+    "entregados": {
+      "type": "number",
+      "default": 0,
+      "description": "Mensajes entregados exitosamente"
+    },
+    "abiertos": {
+      "type": "number",
+      "default": 0
+    },
+    "clicks": {
+      "type": "number",
+      "default": 0
+    },
+    "conversiones": {
+      "type": "number",
+      "default": 0,
+      "description": "Reservas realizadas tras la campa\u00f1a"
+    },
+    "tasa_apertura": {
+      "type": "number",
+      "default": 0,
+      "description": "Porcentaje de apertura"
+    },
+    "tasa_clicks": {
+      "type": "number",
+      "default": 0,
+      "description": "Porcentaje de clicks"
+    },
+    "tasa_conversion": {
+      "type": "number",
+      "default": 0,
+      "description": "Porcentaje de conversi\u00f3n a reserva"
+    },
+    "ingresos_generados": {
+      "type": "number",
+      "default": 0,
+      "description": "Ingresos atribuidos a esta campa\u00f1a"
+    },
+    "enlaces_rastreables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url_original": {
+            "type": "string"
+          },
+          "url_tracking": {
+            "type": "string"
+          },
+          "clicks": {
+            "type": "number"
+          }
+        }
+      },
+      "description": "Enlaces con seguimiento de clicks"
+    }
+  },
+  "required": [
+    "restaurant_id",
+    "nombre",
+    "mensaje"
+  ]
+}

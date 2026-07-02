@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hostflow}
+      POSTGRES_USER: ${POSTGRES_USER:-hostflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hostflow}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hostflow} -d ${POSTGRES_DB:-hostflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hostflow}:${POSTGRES_PASSWORD:-hostflow}@postgres:5432/${POSTGRES_DB:-hostflow}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-local-secret}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      SEED_INITIAL_DATA: ${SEED_INITIAL_DATA:-true}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@hostflow.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Hostflow123!}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_URL: /api
+      VITE_PROXY_API_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:

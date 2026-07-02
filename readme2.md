@@ -1,0 +1,6 @@
+-Configuracion moverla abajo izquierda
+-Nombre de la empresa en la izquierda donde pone hostflow
+-Api reviews de google
+-Revisar analiticas
+-Modificar modulos, dos grandes, dashboard principal y crm privado.
+-Mirar permisos admin, y ocultarlos.
