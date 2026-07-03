@@ -106,6 +106,33 @@ const auth = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    if (data.requires_pin) {
+      return data;
+    }
+    setToken(data.access_token);
+    return data.user;
+  },
+
+  async verifyPin(temporaryToken: string, pin: string) {
+    const data = await request('/auth/verify-pin', {
+      method: 'POST',
+      body: JSON.stringify({ temporary_token: temporaryToken, pin }),
+    });
+    setToken(data.access_token);
+    return data.user;
+  },
+
+  validateLicense: (licenseKey: string) =>
+    request('/auth/validate-license', {
+      method: 'POST',
+      body: JSON.stringify({ license_key: licenseKey }),
+    }),
+
+  async registerCompany(payload: Record<string, unknown>) {
+    const data = await request('/auth/register-company', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
     setToken(data.access_token);
     return data.user;
   },
@@ -138,12 +165,122 @@ const auth = {
   },
 };
 
+const users = {
+  list: () => request('/users'),
+  create: (data: Record<string, unknown>) =>
+    request('/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Record<string, unknown>) =>
+    request(`/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deactivate: (id: string) =>
+    request(`/users/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
 const functions = {
   invoke: (name: string, payload: Record<string, unknown> = {}) =>
     request(`/functions/${name}`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }).then((data) => ({ data })),
+};
+
+const aiManager = {
+  chat: (message: string, conversationId?: string) =>
+    request('/ai-manager/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, conversation_id: conversationId }),
+    }),
+
+  suggestions: () => request('/ai-manager/suggestions'),
+
+  confirmAction: (id: string, payload: Record<string, unknown> = {}) =>
+    request('/ai-manager/action/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ id, payload }),
+    }),
+};
+
+const costIntelligence = {
+  ingredients: () => request('/cost-intelligence/ingredients'),
+  createIngredient: (data: Record<string, unknown>) =>
+    request('/cost-intelligence/ingredients', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateIngredient: (id: string, data: Record<string, unknown>) =>
+    request(`/cost-intelligence/ingredients/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteIngredient: (id: string) =>
+    request(`/cost-intelligence/ingredients/${id}`, {
+      method: 'DELETE',
+    }),
+  suppliers: () => request('/cost-intelligence/suppliers'),
+  createSupplier: (data: Record<string, unknown>) =>
+    request('/cost-intelligence/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  dishes: () => request('/cost-intelligence/dishes'),
+  createDish: (data: Record<string, unknown>) =>
+    request('/cost-intelligence/dishes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateDish: (id: string, data: Record<string, unknown>) =>
+    request(`/cost-intelligence/dishes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteDish: (id: string) =>
+    request(`/cost-intelligence/dishes/${id}`, {
+      method: 'DELETE',
+    }),
+  recipes: () => request('/cost-intelligence/recipes'),
+  createRecipeItem: (data: Record<string, unknown>) =>
+    request('/cost-intelligence/recipes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteRecipeItem: (id: string) =>
+    request(`/cost-intelligence/recipes/${id}`, {
+      method: 'DELETE',
+    }),
+  dishCostBreakdown: (id: string) => request(`/cost-intelligence/dishes/${id}/cost-breakdown`),
+  priceAdvice: () => request('/cost-intelligence/price-advice'),
+  createInvoice: (data: Record<string, unknown>) =>
+    request('/cost-intelligence/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  generateRecommendations: (targetMargin = 0.68) =>
+    request('/cost-intelligence/recommendations/generate', {
+      method: 'POST',
+      body: JSON.stringify({ target_margin: targetMargin }),
+    }),
+  simulatePriceChange: (dishId: string, newPrice: number) =>
+    request('/cost-intelligence/simulate-price-change', {
+      method: 'POST',
+      body: JSON.stringify({ dish_id: dishId, new_price: newPrice }),
+    }),
+  scanTicket: (data: { image_base64: string; mime_type: string; note?: string }) =>
+    request('/cost-intelligence/ticket/scan', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  applyTicket: (data: Record<string, unknown>) =>
+    request('/cost-intelligence/ticket/apply', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 const integrations = {
@@ -161,6 +298,9 @@ export const base44 = {
   auth,
   entities,
   functions,
+  aiManager,
+  costIntelligence,
+  users,
   integrations,
   appLogs: {
     logUserInApp: async (_pageName: string) => ({ success: true }),

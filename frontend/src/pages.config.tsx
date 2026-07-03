@@ -67,8 +67,12 @@ import Tags from './pages/Tags';
 import confirmarReserva from './pages/confirmar-reserva';
 import reservarPublico from './pages/reservar-publico';
 import Analytics from './pages/Analytics';
+import AIManager from './pages/AIManager';
+import CostIntelligence from './pages/CostIntelligence';
+import Users from './pages/Users';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Forbidden from './pages/Forbidden';
 import __Layout from './Layout';
 
 
@@ -93,8 +97,12 @@ export const PAGES = {
     "confirmar-reserva": confirmarReserva,
     "reservar-publico": reservarPublico,
     "Analytics": Analytics,
+    "ai-manager": AIManager,
+    "cost-intelligence": CostIntelligence,
+    "Users": Users,
     "Login": Login,
     "Register": Register,
+    "Forbidden": Forbidden,
 }
 
 export const pagesConfig = {

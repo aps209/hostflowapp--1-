@@ -2,11 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.ai_manager import router as ai_manager_router
+from app.api.cost_intelligence import router as cost_intelligence_router
 from app.api.entities import router as entities_router
 from app.api.functions import router as functions_router
+from app.api.users import router as users_router
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
-from app.models import entity, user  # noqa: F401
+from app.models import entity, license, user  # noqa: F401
+from app.services.schema import ensure_runtime_schema
 from app.services.seed import seed_initial_data
 
 
@@ -24,6 +28,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema()
     db = SessionLocal()
     try:
         seed_initial_data(db)
@@ -39,3 +44,6 @@ def health() -> dict:
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(entities_router, prefix=settings.api_prefix)
 app.include_router(functions_router, prefix=settings.api_prefix)
+app.include_router(ai_manager_router, prefix=settings.api_prefix)
+app.include_router(cost_intelligence_router, prefix=settings.api_prefix)
+app.include_router(users_router, prefix=settings.api_prefix)

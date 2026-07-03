@@ -1,6 +1,8 @@
 import {
   BarChart3,
+  Bot,
   Building2,
+  Calculator,
   Calendar,
   Clock,
   Grid3x3,
@@ -30,6 +32,20 @@ export const APP_MODULES = [
     icon: Users,
     colorClass: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
   },
+  {
+    key: "ai_manager",
+    nombre: "AI Manager",
+    descripcion: "Copiloto para preguntas de negocio, insights y acciones con confirmacion.",
+    icon: Bot,
+    colorClass: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-700",
+  },
+  {
+    key: "cost_intelligence",
+    nombre: "Cost Intelligence",
+    descripcion: "Costes, recetas, facturas, margenes y recomendaciones de precio.",
+    icon: Calculator,
+    colorClass: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800",
+  },
 ] as const;
 
 export const PAGE_MODULE_REQUIREMENTS: Record<string, string> = {
@@ -47,6 +63,9 @@ export const PAGE_MODULE_REQUIREMENTS: Record<string, string> = {
   Tags: "crm_privado",
   Camareros: "crm_privado",
   Recordatorios: "crm_privado",
+  "ai-manager": "ai_manager",
+  "cost-intelligence": "cost_intelligence",
+  Users: "user_management",
 };
 
 export const DASHBOARD_NAV_ITEMS = [
@@ -67,4 +86,13 @@ export const CRM_NAV_ITEMS = [
   { title: "Etiquetas", page: "Tags", icon: Tags },
   { title: "Camareros", page: "Camareros", icon: UserCog },
   { title: "Recordatorios", page: "Recordatorios", icon: Clock },
+];
+
+export const AI_NAV_ITEMS = [
+  { title: "AI Manager", page: "ai-manager", icon: Bot },
+  { title: "Cost Intelligence", page: "cost-intelligence", icon: Calculator },
+];
+
+export const ADMIN_NAV_ITEMS = [
+  { title: "Usuarios", page: "Users", icon: UserCog },
 ];

@@ -108,7 +108,16 @@ export function RestaurantProvider({ children }) {
   };
 
   const hasModuleAccess = (moduleName) => {
-    if (user?.role === 'admin') return true;
+    if (user?.role === 'admin' || user?.is_platform_admin) return true;
+    const permissionMap = {
+      dashboard_principal: 'dashboard',
+      crm_privado: 'crm',
+      ai_manager: 'chatbot',
+      cost_intelligence: 'cost_intelligence',
+      user_management: 'user_management',
+    };
+    const requiredPermission = permissionMap[moduleName];
+    if (requiredPermission && user?.permissions?.includes(requiredPermission)) return true;
     if (!restaurant) return false;
 
     const restaurantValue = restaurant.modulos_activos?.[moduleName];

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { base44 } from "@/api/base44Client";
 import { RestaurantProvider, useRestaurant } from "./components/RestaurantContext";
-import { CRM_NAV_ITEMS, DASHBOARD_NAV_ITEMS } from "@/lib/modules";
+import { ADMIN_NAV_ITEMS, AI_NAV_ITEMS, CRM_NAV_ITEMS, DASHBOARD_NAV_ITEMS } from "@/lib/modules";
 import { isPlatformAdmin, isRestaurantAdmin } from "@/lib/authz";
 
 const adminNavItem = {
@@ -87,7 +87,17 @@ function LayoutContent({ children, user, location, handleLogout }) {
       module: "crm_privado",
       items: CRM_NAV_ITEMS,
     },
-  ].filter((group) => hasModuleAccess(group.module));
+    {
+      label: "Inteligencia",
+      module: null,
+      items: AI_NAV_ITEMS.filter((item) => hasModuleAccess(item.page === "cost-intelligence" ? "cost_intelligence" : "ai_manager")),
+    },
+    {
+      label: "Administracion",
+      module: "user_management",
+      items: ADMIN_NAV_ITEMS,
+    },
+  ].filter((group) => group.items.length > 0 && (!group.module || hasModuleAccess(group.module)));
 
   const renderNavItem = (item) => {
     const url = item.url || createPageUrl(item.page);

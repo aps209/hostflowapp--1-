@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.models.entity import EntityRecord
 from app.services.entities import create_entity_record, serialize_record, update_entity_record
+from app.services.reservation_assignment import apply_assignment_to_reservation, find_reservation_assignment
 
 
 router = APIRouter(prefix="/functions", tags=["functions"])
@@ -64,6 +65,10 @@ def create_reservation(db: Session, payload: dict) -> dict:
     if not restaurant_id:
         return {"success": False, "error": "Falta restaurant_id"}
 
+    assignment = find_reservation_assignment(db, restaurant_id, payload)
+    if not assignment.get("success"):
+        return assignment
+
     customer = None
     for candidate in all_records(db, "Customer"):
         same_restaurant = candidate.get("restaurant_id") == restaurant_id
@@ -85,14 +90,6 @@ def create_reservation(db: Session, payload: dict) -> dict:
             "estado": "activo",
         })
 
-    tables = [item for item in all_records(db, "Table") if item.get("restaurant_id") == restaurant_id and item.get("activa", True)]
-    selected_table = None
-    requested_table_id = payload.get("mesa_id") or payload.get("table_id")
-    if requested_table_id:
-        selected_table = next((table for table in tables if table.get("id") == requested_table_id), None)
-    if not selected_table and tables:
-        selected_table = sorted(tables, key=lambda table: table.get("capacidad", 999))[0]
-
     reservation_data = {
         **payload,
         "restaurant_id": restaurant_id,
@@ -107,11 +104,7 @@ def create_reservation(db: Session, payload: dict) -> dict:
         "confirmation_token": payload.get("confirmation_token") or str(uuid4()),
         "duracion_estimada": payload.get("duracion_estimada") or 90,
     }
-    if selected_table:
-        reservation_data.setdefault("mesa_id", selected_table["id"])
-        reservation_data.setdefault("mesa_numero", selected_table.get("numero"))
-        reservation_data.setdefault("mesas_unidas", [])
-        reservation_data.setdefault("mesas_numeros", [selected_table.get("numero")])
+    apply_assignment_to_reservation(reservation_data, assignment)
 
     reservation = create_entity_record(db, "Reservation", reservation_data)
     return {"success": True, "reservation": reservation, "reservation_id": reservation["reservation_id"]}

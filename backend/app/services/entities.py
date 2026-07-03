@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.entity import EntityRecord
 from app.models.user import User
 from app.core.config import settings
+from app.services.authz import user_permissions, user_plan
 
 
 def iso(value: Any) -> Any:
@@ -25,6 +26,8 @@ def serialize_record(record: EntityRecord) -> dict[str, Any]:
 
 def serialize_user(user: User) -> dict[str, Any]:
     is_platform_admin = user.email.lower() == settings.platform_admin_email.lower()
+    plan = user_plan(user)
+    permissions = user_permissions(user)
     return {
         "id": user.id,
         "nombre": user.nombre,
@@ -32,6 +35,10 @@ def serialize_user(user: User) -> dict[str, Any]:
         "email": user.email,
         "role": user.role,
         "is_platform_admin": is_platform_admin,
+        "company_id": user.company_id,
+        "plan": plan,
+        "permissions": permissions,
+        "is_active": getattr(user, "is_active", True),
         "restaurant_id": user.restaurant_id,
         "modulos_permitidos": user.modulos_permitidos or {},
         "created_date": iso(user.created_date),

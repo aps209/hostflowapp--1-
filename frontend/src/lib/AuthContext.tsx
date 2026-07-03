@@ -37,6 +37,17 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const currentUser = await base44.auth.login(email, password);
+    if (currentUser?.requires_pin) {
+      return currentUser;
+    }
+    setUser(currentUser);
+    setIsAuthenticated(true);
+    setAuthError(null);
+    return currentUser;
+  };
+
+  const verifyPin = async (temporaryToken, pin) => {
+    const currentUser = await base44.auth.verifyPin(temporaryToken, pin);
     setUser(currentUser);
     setIsAuthenticated(true);
     setAuthError(null);
@@ -44,7 +55,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (payload) => {
-    const currentUser = await base44.auth.register(payload);
+    const currentUser = payload.license_key
+      ? await base44.auth.registerCompany(payload)
+      : await base44.auth.register(payload);
     setUser(currentUser);
     setIsAuthenticated(true);
     setAuthError(null);
@@ -72,6 +85,7 @@ export const AuthProvider = ({ children }) => {
         authError,
         appPublicSettings: { auth_required: true },
         login,
+        verifyPin,
         register,
         logout,
         navigateToLogin,

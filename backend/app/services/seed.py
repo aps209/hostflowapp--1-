@@ -12,7 +12,22 @@ from app.models.user import User
 DEFAULT_MODULES = {
     "dashboard_principal": True,
     "crm_privado": True,
+    "ai_manager": True,
+    "cost_intelligence": True,
 }
+
+
+def modules_for_plan(plan: str, role: str = "CEO") -> dict:
+    normalized_plan = plan.upper()
+    normalized_role = role.upper()
+    return {
+        **DEFAULT_MODULES,
+        "dashboard_principal": True,
+        "crm_privado": normalized_role == "CEO" and normalized_plan in {"PREMIUM", "ULTRA"},
+        "ai_manager": normalized_role == "CEO" and normalized_plan == "ULTRA",
+        "cost_intelligence": normalized_role == "CEO" and normalized_plan == "ULTRA",
+        "plan": normalized_plan,
+    }
 
 
 def normalize_module_permissions(db: Session) -> None:
@@ -22,13 +37,12 @@ def normalize_module_permissions(db: Session) -> None:
     for restaurant in restaurants:
         data = restaurant.data or {}
         modules = data.get("modulos_activos") or {}
-        if "dashboard_principal" not in modules or "crm_privado" not in modules:
+        if any(key not in modules for key in DEFAULT_MODULES):
             restaurant.data = {
                 **data,
                 "modulos_activos": {
                     **modules,
-                    "dashboard_principal": modules.get("dashboard_principal", True),
-                    "crm_privado": modules.get("crm_privado", True),
+                    **{key: modules.get(key, value) for key, value in DEFAULT_MODULES.items()},
                 },
             }
             changed = True
@@ -36,11 +50,10 @@ def normalize_module_permissions(db: Session) -> None:
     users = db.query(User).all()
     for user in users:
         modules = user.modulos_permitidos or {}
-        if "dashboard_principal" not in modules or "crm_privado" not in modules:
+        if any(key not in modules for key in DEFAULT_MODULES):
             user.modulos_permitidos = {
                 **modules,
-                "dashboard_principal": modules.get("dashboard_principal", True),
-                "crm_privado": modules.get("crm_privado", True),
+                **{key: modules.get(key, value) for key, value in DEFAULT_MODULES.items()},
             }
             changed = True
 
@@ -190,8 +203,132 @@ def create_restaurant_bundle(db: Session, owner_name: str, slug: str = "demo-hos
     })
     create_record(db, "ReminderConfig", {"restaurant_id": restaurant_id, "enabled": True, "hours_before": 24})
 
+    seed_cost_demo(db, restaurant_id)
+
     db.commit()
     return restaurant_id
+
+
+def seed_cost_demo(db: Session, restaurant_id: str) -> None:
+    """Datos demo de coste sobre la entidad unificada Ingredient (compartida con Stock)."""
+    create_record(db, "Supplier", {
+        "restaurant_id": restaurant_id,
+        "name": "Proveedor Demo",
+        "contact_info": "compras@proveedor.local",
+    })
+    tomato = create_record(db, "Ingredient", {
+        "restaurant_id": restaurant_id,
+        "nombre": "Tomate pera",
+        "categoria": "verduras",
+        "unidad_medida": "kg",
+        "stock_actual": 8,
+        "stock_minimo": 3,
+        "coste_unitario": 2.4,
+        "coste_unitario_anterior": 2.0,
+        "proveedor": "Proveedor Demo",
+        "activo": True,
+    })
+    burrata = create_record(db, "Ingredient", {
+        "restaurant_id": restaurant_id,
+        "nombre": "Burrata",
+        "categoria": "lacteos",
+        "unidad_medida": "unidad",
+        "stock_actual": 12,
+        "stock_minimo": 6,
+        "coste_unitario": 3.1,
+        "coste_unitario_anterior": 2.85,
+        "proveedor": "Proveedor Demo",
+        "activo": True,
+    })
+    dish = create_record(db, "Dish", {
+        "restaurant_id": restaurant_id,
+        "name": "Ensalada de burrata",
+        "sale_price": 12.5,
+        "category": "entrantes",
+        "active": True,
+        "target_margin": 0.68,
+        "estimated_monthly_units": 120,
+    })
+    create_record(db, "Recipe", {
+        "restaurant_id": restaurant_id,
+        "dish_id": dish.id,
+        "ingredient_id": tomato.id,
+        "quantity": 0.18,
+        "unit": "kg",
+    })
+    create_record(db, "Recipe", {
+        "restaurant_id": restaurant_id,
+        "dish_id": dish.id,
+        "ingredient_id": burrata.id,
+        "quantity": 1,
+        "unit": "unidad",
+    })
+
+
+def ensure_cost_demo_data(db: Session, restaurant_id: str) -> None:
+    existing = db.query(EntityRecord).filter(
+        EntityRecord.entity_name == "Dish",
+        EntityRecord.data["restaurant_id"].astext == restaurant_id,
+    ).first()
+    if existing:
+        return
+
+    seed_cost_demo(db, restaurant_id)
+    db.commit()
+
+
+def migrate_cost_ingredients_to_stock(db: Session) -> None:
+    """Unifica los antiguos CostIngredient en la entidad Ingredient de Stock.
+
+    Idempotente: si no quedan registros CostIngredient no hace nada.
+    Reasigna las recetas que apuntaban al viejo ingrediente y elimina el legacy.
+    """
+    from app.services.cost_intelligence import _normalize_name
+
+    legacy = db.query(EntityRecord).filter(EntityRecord.entity_name == "CostIngredient").all()
+    if not legacy:
+        return
+
+    ingredients = db.query(EntityRecord).filter(EntityRecord.entity_name == "Ingredient").all()
+    index: dict[tuple, str] = {}
+    for ingredient in ingredients:
+        data = ingredient.data or {}
+        key = (data.get("restaurant_id"), _normalize_name(data.get("nombre") or data.get("name")))
+        index[key] = ingredient.id
+
+    id_map: dict[str, str] = {}
+    for record in legacy:
+        data = record.data or {}
+        restaurant_id = data.get("restaurant_id")
+        name = data.get("name") or data.get("nombre") or ""
+        key = (restaurant_id, _normalize_name(name))
+        target_id = index.get(key)
+        if not target_id:
+            new_ingredient = create_record(db, "Ingredient", {
+                "restaurant_id": restaurant_id,
+                "nombre": name,
+                "categoria": "otros",
+                "unidad_medida": data.get("unit") or "kg",
+                "stock_actual": 0,
+                "stock_minimo": 0,
+                "coste_unitario": data.get("current_cost_per_unit") or 0,
+                "coste_unitario_anterior": data.get("previous_cost_per_unit"),
+                "proveedor": "",
+                "activo": True,
+            })
+            target_id = new_ingredient.id
+            index[key] = target_id
+        id_map[record.id] = target_id
+
+    for recipe in db.query(EntityRecord).filter(EntityRecord.entity_name == "Recipe").all():
+        data = recipe.data or {}
+        old_id = data.get("ingredient_id")
+        if old_id in id_map:
+            recipe.data = {**data, "ingredient_id": id_map[old_id]}
+
+    for record in legacy:
+        db.delete(record)
+    db.commit()
 
 
 def seed_initial_data(db: Session) -> None:
@@ -199,9 +336,23 @@ def seed_initial_data(db: Session) -> None:
         return
 
     normalize_module_permissions(db)
+    migrate_cost_ingredients_to_stock(db)
 
     user = db.query(User).filter(User.email == settings.seed_admin_email).first()
     if user:
+        user.role = "CEO"
+        user.modulos_permitidos = {
+            **modules_for_plan("ULTRA", "CEO"),
+            **(user.modulos_permitidos or {}),
+            "plan": (user.modulos_permitidos or {}).get("plan", "ULTRA"),
+        }
+        if not user.pin_hash:
+            user.pin_hash = hash_password(settings.seed_admin_pin)
+        if not getattr(user, "is_active", True):
+            user.is_active = True
+        db.commit()
+        if user.restaurant_id:
+            ensure_cost_demo_data(db, user.restaurant_id)
         return
 
     restaurant_id = create_restaurant_bundle(db, "HostFlow")
@@ -209,9 +360,11 @@ def seed_initial_data(db: Session) -> None:
         nombre="Administrador HostFlow",
         email=settings.seed_admin_email,
         password_hash=hash_password(settings.seed_admin_password),
-        role="admin",
+        role="CEO",
         restaurant_id=restaurant_id,
-        modulos_permitidos=DEFAULT_MODULES,
+        pin_hash=hash_password(settings.seed_admin_pin),
+        is_active=True,
+        modulos_permitidos=modules_for_plan("ULTRA", "CEO"),
     )
     db.add(user)
     db.commit()

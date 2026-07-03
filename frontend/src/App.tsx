@@ -10,7 +10,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { PAGE_MODULE_REQUIREMENTS } from '@/lib/modules';
-import { isPlatformAdmin, isRestaurantAdmin } from '@/lib/authz';
+import { hasPermission, isPlatformAdmin } from '@/lib/authz';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -29,10 +29,20 @@ const publicPages = new Set([
 ]);
 
 const adminPages = new Set(['Admin', 'ModulosRestaurante']);
-const mainModules = new Set(['dashboard_principal', 'crm_privado']);
+const mainModules = new Set(['dashboard_principal', 'crm_privado', 'ai_manager', 'cost_intelligence', 'user_management']);
 
 const userHasModule = (user, moduleName: string) => {
   const value = user?.modulos_permitidos?.[moduleName];
+  const permissionMap = {
+    dashboard_principal: 'dashboard',
+    crm_privado: 'crm',
+    ai_manager: 'chatbot',
+    cost_intelligence: 'cost_intelligence',
+    user_management: 'user_management',
+  };
+  if (permissionMap[moduleName] && hasPermission(user, permissionMap[moduleName])) {
+    return true;
+  }
   return value === true || (value === undefined && mainModules.has(moduleName));
 };
 
@@ -74,7 +84,7 @@ const AuthenticatedApp = () => {
     const requiredModule = PAGE_MODULE_REQUIREMENTS[path];
     if (
       isAuthenticated &&
-      !isRestaurantAdmin(user) &&
+      !isPlatformAdmin(user) &&
       requiredModule &&
       !userHasModule(user, requiredModule)
     ) {
