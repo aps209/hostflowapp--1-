@@ -84,6 +84,7 @@ export default function CostIntelligence() {
   const [excludedRows, setExcludedRows] = useState({});
   const [replenishStock, setReplenishStock] = useState(true);
   const [dragActive, setDragActive] = useState(false);
+  const [scanError, setScanError] = useState(null);
 
   const invalidateCosts = () => {
     ["cost-ingredients", "cost-dishes", "cost-recipes", "cost-price-advice"].forEach((key) =>
@@ -201,11 +202,16 @@ export default function CostIntelligence() {
       return base44.costIntelligence.scanTicket({ image_base64: base64, mime_type: mime });
     },
     onSuccess: (data) => {
+      setScanError(null);
       setTicketPreview(data);
       setExcludedRows({});
       toast.success(`Ticket leído: ${data.summary?.new_count || 0} nuevos, ${data.summary?.update_count || 0} actualizaciones`);
     },
-    onError: (error) => toast.error(error?.data?.detail || error?.message || "No se pudo leer el ticket"),
+    onError: (error) => {
+      const detail = error?.data?.detail || error?.message || "No se pudo leer el ticket";
+      setScanError(detail);
+      toast.error(detail);
+    },
   });
 
   const applyTicket = useMutation({
@@ -234,6 +240,7 @@ export default function CostIntelligence() {
     const file = files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { toast.error("Sube una imagen del ticket"); return; }
+    setScanError(null);
     scanTicket.mutate(file);
   };
 
@@ -323,6 +330,11 @@ export default function CostIntelligence() {
                       className="hidden"
                       onChange={(e) => handleFiles(e.target.files)}
                     />
+                    {scanError && (
+                      <p className="mt-1 max-w-lg rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                        {scanError}
+                      </p>
+                    )}
                   </>
                 )}
               </div>

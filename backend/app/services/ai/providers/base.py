@@ -19,3 +19,12 @@ class AIProvider(ABC):
         mime_type: str = "image/jpeg",
     ) -> dict[str, Any]:
         raise AIConfigurationError("El proveedor de IA configurado no soporta imagenes.")
+
+    def generate_json_with_images(
+        self,
+        system_prompt: str,
+        user_text: str,
+        images: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """images: lista de {"data": base64, "mime": "image/..."}."""
+        raise AIConfigurationError("El proveedor de IA configurado no soporta imagenes.")

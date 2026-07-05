@@ -26,13 +26,25 @@ class GeminiProvider(AIProvider):
         image_base64: str,
         mime_type: str = "image/jpeg",
     ) -> dict[str, Any]:
-        return self._generate(
-            system_prompt,
-            [
-                {"text": user_text},
-                {"inlineData": {"mimeType": mime_type, "data": image_base64}},
-            ],
+        return self.generate_json_with_images(
+            system_prompt, user_text, [{"data": image_base64, "mime": mime_type}]
         )
+
+    def generate_json_with_images(
+        self,
+        system_prompt: str,
+        user_text: str,
+        images: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        parts: list[dict[str, Any]] = [{"text": user_text}]
+        for image in images:
+            parts.append({
+                "inlineData": {
+                    "mimeType": image.get("mime") or "image/jpeg",
+                    "data": image["data"],
+                }
+            })
+        return self._generate(system_prompt, parts)
 
     def _generate(self, system_prompt: str, parts: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.api_key:
@@ -80,6 +92,11 @@ class GeminiProvider(AIProvider):
                     raise AIConfigurationError(
                         "Has alcanzado el limite de peticiones de Gemini (429). "
                         "Espera un momento o revisa tu plan y cuota en Google AI Studio."
+                    ) from error
+                if error.code == 404:
+                    raise AIConfigurationError(
+                        f"El modelo de IA '{self.model}' no existe o no admite generateContent. "
+                        "Revisa AI_MODEL en el backend (por ejemplo gemini-3.5-flash o gemini-2.5-flash)."
                     ) from error
                 last_error = AIConfigurationError(f"Gemini devolvio {error.code}: {details}")
                 if error.code not in {500, 502, 503, 504} or attempt == 2:

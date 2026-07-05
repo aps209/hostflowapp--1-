@@ -283,6 +283,27 @@ const costIntelligence = {
     }),
 };
 
+const orders = {
+  create: (data: Record<string, unknown>) =>
+    request('/orders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+const menu = {
+  scan: (images: { image_base64: string; mime_type: string }[]) =>
+    request('/menu/scan', {
+      method: 'POST',
+      body: JSON.stringify({ images }),
+    }),
+  apply: (dishes: Record<string, unknown>[]) =>
+    request('/menu/apply', {
+      method: 'POST',
+      body: JSON.stringify({ dishes }),
+    }),
+};
+
 const integrations = {
   Core: {
     InvokeLLM: async () => ({ success: false, message: 'Integracion LLM no configurada en local.' }),
@@ -300,6 +321,8 @@ export const base44 = {
   functions,
   aiManager,
   costIntelligence,
+  menu,
+  orders,
   users,
   integrations,
   appLogs: {

@@ -157,6 +157,22 @@ export default function Analytics() {
   const repeatCustomers = customers.filter(c => (c.total_visitas || 0) > 1).length;
   const repeatRate = customers.length > 0 ? (repeatCustomers / customers.length) * 100 : 0;
 
+  // Ingresos reales por pedidos (comandas pagadas)
+  const paidOrders = filteredOrders.filter(o => o.estado === 'pagado');
+  const ordersRevenue = paidOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+  const ordersTicket = paidOrders.length > 0 ? ordersRevenue / paidOrders.length : 0;
+
+  const ordersByTable = useMemo(() => {
+    const map = {};
+    filteredOrders
+      .filter(o => o.estado === 'pagado')
+      .forEach(o => {
+        if (o.mesa_numero == null) return;
+        map[o.mesa_numero] = (map[o.mesa_numero] || 0) + (o.total || 0);
+      });
+    return map;
+  }, [filteredOrders]);
+
   // Ocupación diaria
   const dailyOccupancy = useMemo(() => {
     const now = new Date();
@@ -303,11 +319,19 @@ export default function Analytics() {
       }
     });
 
+    // Sumar ingresos reales de comandas pagadas por mesa
+    Object.entries(ordersByTable).forEach(([mesa, revenue]) => {
+      if (!tableStats[mesa]) {
+        tableStats[mesa] = { mesa, reservas: 0, comensales: 0, ingresos: 0 };
+      }
+      tableStats[mesa].ingresos += revenue;
+    });
+
     return Object.values(tableStats).map(t => ({
       ...t,
       ocupacion: t.reservas > 0 ? (t.reservas / filteredReservations.length) * 100 : 0
-    })).sort((a, b) => b.reservas - a.reservas);
-  }, [filteredReservations]);
+    })).sort((a, b) => b.ingresos - a.ingresos || b.reservas - a.reservas);
+  }, [filteredReservations, ordersByTable]);
 
   // Función para exportar a CSV
   const exportToCSV = (data, filename) => {
@@ -557,6 +581,19 @@ export default function Analytics() {
 
       {/* Métricas principales */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <Card className="border-0 shadow-xl bg-white dark:bg-slate-900">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <div className="p-2 md:p-3 rounded-xl bg-gradient-to-br from-green-500 to-green-600 text-white">
+                <DollarSign className="w-4 h-4 md:w-5 md:h-5" />
+              </div>
+            </div>
+            <p className="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Ventas (Pedidos)</p>
+            <p className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">€{ordersRevenue.toFixed(2)}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{paidOrders.length} pagados · ticket €{ordersTicket.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+
         <Card className="border-0 shadow-xl bg-white dark:bg-slate-900">
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between mb-3 md:mb-4">

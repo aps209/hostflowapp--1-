@@ -54,8 +54,16 @@ function SelectTableDialog({ open, onClose, onSelectTable, tables, reservations 
   }).filter(t => t.seatedReservation);
 
   // Todas las mesas disponibles
-  const allTables = tables.filter(t => 
+  const allTables = tables.filter(t =>
     !searchTerm || t.numero.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Reserva activa hoy para una mesa (para avisar de mesas sin clientes)
+  const activeStates = ['pendiente', 'confirmada', 'sentada'];
+  const reservationForTable = (table) => reservations.find(r =>
+    (r.mesa_id === table.id || r.mesas_unidas?.includes(table.id)) &&
+    r.fecha === today &&
+    activeStates.includes(r.estado)
   );
 
   return (
@@ -105,23 +113,46 @@ function SelectTableDialog({ open, onClose, onSelectTable, tables, reservations 
           )}
 
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">
-              Todas las Mesas
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Todas las Mesas
+              </h3>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-green-500" /> Con reserva
+                </span>
+                <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-amber-400" /> Sin reserva
+                </span>
+              </div>
+            </div>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-              {allTables.map(table => (
-                <Button
-                  key={table.id}
-                  onClick={() => onSelectTable(table, null)}
-                  className="h-20 flex-col"
-                  variant="outline"
-                >
-                  <div className="text-lg font-bold">Mesa {table.numero}</div>
-                  <div className="text-xs text-slate-500">
-                    {table.capacidad} pax
-                  </div>
-                </Button>
-              ))}
+              {allTables.map(table => {
+                const res = reservationForTable(table);
+                return (
+                  <Button
+                    key={table.id}
+                    onClick={() => onSelectTable(table, res || null)}
+                    className={`h-20 flex-col border-2 ${
+                      res
+                        ? 'border-green-500 bg-green-50 hover:bg-green-100 dark:bg-green-950/20 dark:hover:bg-green-950/40'
+                        : 'border-amber-400 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/20 dark:hover:bg-amber-950/40'
+                    }`}
+                    variant="outline"
+                  >
+                    <div className="text-lg font-bold text-slate-900 dark:text-white">Mesa {table.numero}</div>
+                    {res ? (
+                      <div className="text-xs text-green-700 dark:text-green-400 truncate max-w-full">
+                        {res.cliente_nombre}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-700 dark:text-amber-500">
+                        {table.capacidad} pax · libre
+                      </div>
+                    )}
+                  </Button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -180,11 +211,16 @@ export default function Pedidos() {
       const orderCount = orders.filter(o => o.order_number?.startsWith(`O-${year}`)).length;
       const orderNumber = `O-${year}-${String(orderCount + 1).padStart(4, '0')}`;
 
-      const order = await base44.entities.Order.create({ 
-        ...data, 
+      const result = await base44.orders.create({
+        ...data,
         order_number: orderNumber,
-        restaurant_id: restaurantId 
       });
+      const order = result.order;
+
+      if (result.stock_warnings?.length) {
+        const nombres = result.stock_warnings.map((w) => w.ingredient).filter(Boolean).join(", ");
+        toast.warning(`Stock bajo tras la comanda: ${nombres}`);
+      }
 
       // Actualizar cliente si existe
       if (data.customer_id) {
@@ -224,6 +260,8 @@ export default function Pedidos() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders', restaurantId] });
       queryClient.invalidateQueries({ queryKey: ['customers', restaurantId] });
+      queryClient.invalidateQueries({ queryKey: ['ingredients', restaurantId] });
+      queryClient.invalidateQueries({ queryKey: ['cost-ingredients'] });
       setCartItems([]);
       setSelectedTable(null);
       setSelectedReservation(null);
@@ -405,9 +443,9 @@ export default function Pedidos() {
       {/* Contenido principal */}
       <div className="flex-1 overflow-hidden">
         {viewMode === "new" ? (
-          <div className="h-full grid lg:grid-cols-3 gap-4 p-4">
+          <div className="h-full overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
             {/* Panel izquierdo: Productos */}
-            <div className="lg:col-span-2 flex flex-col gap-4">
+            <div className="lg:col-span-2 flex flex-col gap-4 lg:min-h-0">
               {/* Selección de mesa */}
               <Card className="border-0 shadow-lg bg-white dark:bg-slate-900">
                 <CardContent className="p-4">
@@ -472,7 +510,7 @@ export default function Pedidos() {
               </div>
 
               {/* Grid de productos */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="lg:flex-1 lg:overflow-y-auto lg:min-h-0">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {filteredProducts.map(product => (
                     <Button
@@ -501,8 +539,8 @@ export default function Pedidos() {
             </div>
 
             {/* Panel derecho: Carrito */}
-            <div className="flex flex-col gap-4">
-              <Card className="border-0 shadow-lg bg-white dark:bg-slate-900 flex-1 flex flex-col">
+            <div className="flex flex-col gap-4 lg:min-h-0">
+              <Card className="border-0 shadow-lg bg-white dark:bg-slate-900 lg:flex-1 flex flex-col">
                 <CardHeader className="border-b border-slate-100 dark:border-slate-700 pb-3">
                   <CardTitle className="text-slate-900 dark:text-white">
                     Pedido Actual ({cartItems.length})

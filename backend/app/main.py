@@ -6,6 +6,8 @@ from app.api.ai_manager import router as ai_manager_router
 from app.api.cost_intelligence import router as cost_intelligence_router
 from app.api.entities import router as entities_router
 from app.api.functions import router as functions_router
+from app.api.menu import router as menu_router
+from app.api.orders import router as orders_router
 from app.api.users import router as users_router
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
@@ -46,4 +48,6 @@ app.include_router(entities_router, prefix=settings.api_prefix)
 app.include_router(functions_router, prefix=settings.api_prefix)
 app.include_router(ai_manager_router, prefix=settings.api_prefix)
 app.include_router(cost_intelligence_router, prefix=settings.api_prefix)
+app.include_router(menu_router, prefix=settings.api_prefix)
+app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(users_router, prefix=settings.api_prefix)
