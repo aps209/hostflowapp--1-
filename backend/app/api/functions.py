@@ -15,6 +15,7 @@ from app.db.database import get_db
 from app.models.entity import EntityRecord
 from app.services.entities import create_entity_record, serialize_record, update_entity_record
 from app.services.reservation_assignment import apply_assignment_to_reservation, find_reservation_assignment
+from app.services.whatsapp import send_whatsapp_template
 
 
 router = APIRouter(prefix="/functions", tags=["functions"])
@@ -215,6 +216,26 @@ def sync_google_reviews(db: Session, payload: dict) -> dict:
     }
 
 
+def apply_reservation_action(db: Session, token: str | None, action: str | None) -> dict:
+    """Logica compartida confirmar/cancelar por token. La usan tanto el dispatcher
+    (gestionarReservaPorToken) como el webhook entrante de WhatsApp."""
+    if not token:
+        return {"success": False, "error": "Token no valido"}
+    reservation = find_one(db, "Reservation", confirmation_token=token)
+    if not reservation:
+        return {"success": False, "error": "Token no valido"}
+
+    if action == "cancelar":
+        reservation = update_entity_record(db, "Reservation", reservation["id"], {"estado": "cancelada"})
+        return {"success": True, "action": "cancelar", "message": "Reserva cancelada correctamente", "reservation": reservation}
+    if action == "confirmar":
+        reservation = update_entity_record(db, "Reservation", reservation["id"], {"estado": "confirmada"})
+        return {"success": True, "action": "confirmar", "message": "Reserva confirmada correctamente", "reservation": reservation}
+
+    restaurant = find_one(db, "Restaurant", id=reservation.get("restaurant_id"))
+    return {"success": True, "reservation": reservation, "restaurant": restaurant}
+
+
 def format_spanish_date(date_value: str) -> str:
     weekdays = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     months = [
@@ -242,6 +263,20 @@ def build_reminder_message(config: dict, restaurant: dict, reservation: dict) ->
         .replace("{comensales}", str(reservation.get("comensales") or ""))
         .replace("{link_cancelar}", cancel_url)
     )
+
+
+def build_whatsapp_body_params(restaurant: dict, reservation: dict) -> list[str]:
+    """Parametros del body de la plantilla WhatsApp, en el orden {{1}}..{{6}}:
+    nombre, restaurante, fecha, hora, comensales, mesa."""
+    mesa_info = ", ".join(reservation.get("mesas_numeros") or []) or reservation.get("mesa_numero") or "Por asignar"
+    return [
+        reservation.get("cliente_nombre") or "Cliente",
+        restaurant.get("nombre") or "Restaurante",
+        format_spanish_date(reservation.get("fecha")),
+        reservation.get("hora") or "",
+        str(reservation.get("comensales") or ""),
+        mesa_info,
+    ]
 
 
 def send_twilio_sms(to: str, body: str) -> dict:
@@ -292,6 +327,7 @@ def enviar_recordatorios(db: Session, payload: dict) -> dict:
         }
 
     config = configs[0]
+    channel = (config.get("channel") or "whatsapp").lower()
     hours_before = int(config.get("hours_before") or 24)
     target_time = datetime.now(timezone.utc) + timedelta(hours=hours_before)
     target_date = payload.get("target_date") or target_time.date().isoformat()
@@ -304,6 +340,8 @@ def enviar_recordatorios(db: Session, payload: dict) -> dict:
     if config.get("only_confirmed"):
         reservations = [item for item in reservations if item.get("estado") == "confirmada"]
     reservations = [item for item in reservations if item.get("cliente_telefono")]
+    # Dedup: no reenviar a reservas que ya recibieron el recordatorio.
+    reservations = [item for item in reservations if not item.get("recordatorio_enviado_at")]
 
     enviados = 0
     errores = 0
@@ -311,17 +349,35 @@ def enviar_recordatorios(db: Session, payload: dict) -> dict:
     detalles = []
 
     for reservation in reservations:
-        message = build_reminder_message(config, restaurant, reservation)
-        result = send_twilio_sms(reservation.get("cliente_telefono"), message)
+        if channel == "sms":
+            message = build_reminder_message(config, restaurant, reservation)
+            result = send_twilio_sms(reservation.get("cliente_telefono"), message)
+            provider = "Twilio"
+        else:
+            message = " | ".join(build_whatsapp_body_params(restaurant, reservation))
+            result = send_whatsapp_template(
+                reservation.get("cliente_telefono"),
+                build_whatsapp_body_params(restaurant, reservation),
+                token=reservation.get("confirmation_token"),
+                template_name=config.get("whatsapp_template_name"),
+            )
+            provider = "WhatsApp"
+
         dry_run = dry_run or result.get("dry_run", False)
 
         if result.get("sent") or result.get("dry_run"):
             enviados += 1
+            # Marcar como enviado solo en envio real (permite re-testear en dry_run).
+            if result.get("sent"):
+                update_entity_record(db, "Reservation", reservation["id"], {
+                    "recordatorio_enviado_at": datetime.now(timezone.utc).isoformat(),
+                    "recordatorio_canal": channel,
+                })
             detalles.append({
                 "reserva_id": reservation.get("reservation_id"),
                 "cliente": reservation.get("cliente_nombre"),
                 "telefono": reservation.get("cliente_telefono"),
-                "resultado": "Dry run - Twilio no configurado" if result.get("dry_run") else "Enviado correctamente",
+                "resultado": f"Dry run - {provider} no configurado" if result.get("dry_run") else "Enviado correctamente",
                 "mensaje": message,
             })
         else:
@@ -337,6 +393,7 @@ def enviar_recordatorios(db: Session, payload: dict) -> dict:
         "success": errores == 0,
         "message": "Recordatorios procesados en modo prueba" if dry_run else "Recordatorios procesados",
         "dry_run": dry_run,
+        "channel": channel,
         "target_date": target_date,
         "enviados": enviados,
         "errores": errores,
@@ -372,18 +429,7 @@ def invoke_function(function_name: str, payload: dict, db: Session = Depends(get
         return {"success": True, "reservation": reservation, "restaurant": restaurant}
 
     if function_name == "gestionarReservaPorToken":
-        reservation = find_one(db, "Reservation", confirmation_token=payload.get("token"))
-        if not reservation:
-            return {"success": False, "error": "Token no valido"}
-        action = payload.get("action")
-        if action == "cancelar":
-            reservation = update_entity_record(db, "Reservation", reservation["id"], {"estado": "cancelada"})
-            return {"success": True, "message": "Reserva cancelada correctamente", "reservation": reservation}
-        if action == "confirmar":
-            reservation = update_entity_record(db, "Reservation", reservation["id"], {"estado": "confirmada"})
-            return {"success": True, "message": "Reserva confirmada correctamente", "reservation": reservation}
-        restaurant = find_one(db, "Restaurant", id=reservation.get("restaurant_id"))
-        return {"success": True, "reservation": reservation, "restaurant": restaurant}
+        return apply_reservation_action(db, payload.get("token"), payload.get("action"))
 
     if function_name == "getReservationsByDate":
         reservations = [

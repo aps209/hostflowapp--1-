@@ -25,7 +25,9 @@ export default function Recordatorios() {
 
   const [formData, setFormData] = useState({
     enabled: config?.enabled ?? true,
+    channel: config?.channel ?? "whatsapp",
     hours_before: config?.hours_before ?? 24,
+    whatsapp_template_name: config?.whatsapp_template_name ?? "reservation_reminder",
     sms_message_template: config?.sms_message_template ?? "Hola {nombre}! Te recordamos tu reserva en {restaurante} mañana {fecha} a las {hora}. Mesa: {mesa}. Personas: {comensales}. Para cancelar: {link_cancelar}",
     only_confirmed: config?.only_confirmed ?? true,
     send_time: config?.send_time ?? "10:00",
@@ -35,7 +37,9 @@ export default function Recordatorios() {
     if (config) {
       setFormData({
         enabled: config.enabled ?? true,
+        channel: config.channel ?? "whatsapp",
         hours_before: config.hours_before ?? 24,
+        whatsapp_template_name: config.whatsapp_template_name ?? "reservation_reminder",
         sms_message_template: config.sms_message_template ?? "Hola {nombre}! Te recordamos tu reserva en {restaurante} mañana {fecha} a las {hora}. Mesa: {mesa}. Personas: {comensales}. Para cancelar: {link_cancelar}",
         only_confirmed: config.only_confirmed ?? true,
         send_time: config.send_time ?? "10:00",
@@ -87,7 +91,7 @@ export default function Recordatorios() {
           Recordatorios Automáticos
         </h1>
         <p className="text-slate-600 dark:text-slate-400 mt-1">
-          Configura el envío automático de recordatorios por SMS a tus clientes
+          Configura el envío automático de recordatorios por WhatsApp a tus clientes, con botones para confirmar o cancelar
         </p>
       </div>
 
@@ -106,13 +110,43 @@ export default function Recordatorios() {
                   Activar Recordatorios Automáticos
                 </Label>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  Los recordatorios se enviarán automáticamente por SMS
+                  El sistema los enviará automáticamente a la hora configurada
                 </p>
               </div>
               <Switch
                 checked={formData.enabled}
                 onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-slate-900 dark:text-white">
+                Canal de envío
+              </Label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, channel: 'whatsapp' })}
+                  className={`flex-1 px-4 py-3 rounded-lg border text-sm font-medium transition ${
+                    formData.channel === 'whatsapp'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  WhatsApp (con botones)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, channel: 'sms' })}
+                  className={`flex-1 px-4 py-3 rounded-lg border text-sm font-medium transition ${
+                    formData.channel === 'sms'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  SMS (Twilio)
+                </button>
+              </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
@@ -165,31 +199,63 @@ export default function Recordatorios() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-slate-900 dark:text-white">
-                Plantilla del mensaje SMS
-              </Label>
-              <Textarea
-                value={formData.sms_message_template}
-                onChange={(e) => setFormData({ ...formData, sms_message_template: e.target.value })}
-                rows={6}
-                className="text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-white font-mono text-sm"
-              />
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mt-3">
-                <p className="text-sm font-semibold text-amber-900 dark:text-amber-300 mb-2">
-                  Variables disponibles:
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-amber-800 dark:text-amber-400">
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{nombre}"}</code>
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{restaurante}"}</code>
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{fecha}"}</code>
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{hora}"}</code>
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{mesa}"}</code>
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{comensales}"}</code>
-                  <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{link_cancelar}"}</code>
+            {formData.channel === 'whatsapp' ? (
+              <div className="space-y-2">
+                <Label className="text-slate-900 dark:text-white">
+                  Nombre de la plantilla de WhatsApp
+                </Label>
+                <Input
+                  value={formData.whatsapp_template_name}
+                  onChange={(e) => setFormData({ ...formData, whatsapp_template_name: e.target.value })}
+                  placeholder="reservation_reminder"
+                  className="text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-white font-mono text-sm"
+                />
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mt-3">
+                  <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-2">
+                    Cómo funciona la plantilla de WhatsApp:
+                  </p>
+                  <p className="text-xs text-green-800 dark:text-green-400 mb-3">
+                    El texto de la plantilla se crea y se aprueba en <strong>Meta Business Manager</strong>. Aquí solo indicas su
+                    nombre. La plantilla debe tener 6 variables en el cuerpo (en este orden) y dos botones de respuesta rápida
+                    (<strong>Confirmar</strong> y <strong>Cancelar</strong>):
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-green-800 dark:text-green-400">
+                    <code className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">{"{{1}} nombre"}</code>
+                    <code className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">{"{{2}} restaurante"}</code>
+                    <code className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">{"{{3}} fecha"}</code>
+                    <code className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">{"{{4}} hora"}</code>
+                    <code className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">{"{{5}} comensales"}</code>
+                    <code className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">{"{{6}} mesa"}</code>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-slate-900 dark:text-white">
+                  Plantilla del mensaje SMS
+                </Label>
+                <Textarea
+                  value={formData.sms_message_template}
+                  onChange={(e) => setFormData({ ...formData, sms_message_template: e.target.value })}
+                  rows={6}
+                  className="text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-white font-mono text-sm"
+                />
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mt-3">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-300 mb-2">
+                    Variables disponibles:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-amber-800 dark:text-amber-400">
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{nombre}"}</code>
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{restaurante}"}</code>
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{fecha}"}</code>
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{hora}"}</code>
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{mesa}"}</code>
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{comensales}"}</code>
+                    <code className="bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded">{"{link_cancelar}"}</code>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <div className="flex items-start gap-3">
@@ -233,11 +299,11 @@ export default function Recordatorios() {
             </div>
             <div className="flex items-start gap-3">
               <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0 text-sm font-bold">3</div>
-              <p>Envía un SMS personalizado a cada cliente con los detalles de su reserva</p>
+              <p>Envía un mensaje personalizado (WhatsApp o SMS) a cada cliente con los detalles de su reserva</p>
             </div>
             <div className="flex items-start gap-3">
               <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0 text-sm font-bold">4</div>
-              <p>Los clientes pueden cancelar fácilmente usando el enlace incluido en el SMS</p>
+              <p>Con WhatsApp, el cliente confirma o cancela pulsando un botón dentro del propio chat; con SMS, mediante el enlace incluido</p>
             </div>
           </div>
         </CardContent>

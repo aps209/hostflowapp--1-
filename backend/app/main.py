@@ -9,10 +9,12 @@ from app.api.functions import router as functions_router
 from app.api.menu import router as menu_router
 from app.api.orders import router as orders_router
 from app.api.users import router as users_router
+from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
 from app.db.database import Base, SessionLocal, engine
 from app.models import entity, license, user  # noqa: F401
 from app.services.schema import ensure_runtime_schema
+from app.services.scheduler import start_scheduler
 from app.services.seed import seed_initial_data
 
 
@@ -36,6 +38,7 @@ def on_startup() -> None:
         seed_initial_data(db)
     finally:
         db.close()
+    start_scheduler()
 
 
 @app.get("/health")
@@ -51,3 +54,4 @@ app.include_router(cost_intelligence_router, prefix=settings.api_prefix)
 app.include_router(menu_router, prefix=settings.api_prefix)
 app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(users_router, prefix=settings.api_prefix)
+app.include_router(webhooks_router, prefix=settings.api_prefix)

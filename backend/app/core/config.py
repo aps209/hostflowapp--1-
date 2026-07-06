@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     twilio_auth_token: str | None = None
     twilio_phone_number: str | None = None
     public_app_url: str = "http://localhost:5173"
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_access_token: str | None = None
+    whatsapp_api_version: str = "v21.0"
+    whatsapp_verify_token: str | None = None
+    whatsapp_app_secret: str | None = None
+    whatsapp_reminder_template: str = "reservation_reminder"
+    whatsapp_reminder_template_lang: str = "es"
+    reminder_timezone: str = "Europe/Madrid"
+    run_scheduler: bool = True
     ai_provider: str = "gemini"
     ai_model: str = "gemini-2.5-flash"
     gemini_api_key: str | None = None
